@@ -356,6 +356,13 @@
                 <label><input type="checkbox" id="show-weights"> 显示权重</label>
             </div>
             
+            <!-- 颜色主题 -->
+            <div class="control-group">
+                <h4>颜色主题</h4>
+                <button class="control-btn active" onclick="switchColorTheme('light')">浅色主题</button>
+                <button class="control-btn" onclick="switchColorTheme('dark')">深色主题</button>
+            </div>
+            
             <!-- 布局控制 -->
             <div class="control-group">
                 <h4>布局控制</h4>
@@ -414,50 +421,16 @@
             <!-- 节点类型图例 -->
             <div style="margin-bottom: 15px;">
                 <h4 style="margin: 0 0 10px 0; color: #333; font-size: 14px;">节点类型</h4>
-                <div style="display: flex; flex-wrap: wrap; gap: 15px;">
-                    <div class="legend-item">
-                        <span class="legend-color" style="background: #ff6b6b; width: 10px; height: 10px;"></span>
-                        用户节点 (小)
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-color" style="background: #4ecdc4; width: 8px; height: 8px;"></span>
-                        帖文节点 (小)
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-color" style="background: #45b7d1; width: 20px; height: 20px;"></span>
-                        平台节点 (大)
-                    </div>
+                <div id="node-type-legend" style="display: flex; flex-wrap: wrap; gap: 15px;">
+                    <!-- 节点类型颜色将通过JavaScript动态生成 -->
                 </div>
             </div>
             
             <!-- 平台颜色图例 -->
             <div style="margin-bottom: 15px;">
                 <h4 style="margin: 0 0 10px 0; color: #333; font-size: 14px;">平台颜色</h4>
-                <div style="display: flex; flex-wrap: wrap; gap: 15px;">
-                    <div class="legend-item">
-                        <span class="legend-color" style="background: #4A90E2; width: 15px; height: 15px;"></span>
-                        微博
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-color" style="background: #C3AB32; width: 15px; height: 15px;"></span>
-                        网易新闻
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-color" style="background: #AC6158; width: 15px; height: 15px;"></span>
-                        抖音
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-color" style="background: #AD748C; width: 15px; height: 15px;"></span>
-                        今日头条
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-color" style="background: #3E5555; width: 15px; height: 15px;"></span>
-                        小红书
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-color" style="background: #E17D66; width: 15px; height: 15px;"></span>
-                        微信
-                    </div>
+                <div id="platform-legend" style="display: flex; flex-wrap: wrap; gap: 15px;">
+                    <!-- 平台颜色将通过JavaScript动态生成 -->
                 </div>
             </div>
             
@@ -474,8 +447,8 @@
                         帖文-平台关系
                     </div>
                     <div class="legend-item">
-                        <span class="legend-line" style="background: #96ceb4; width: 20px; height: 2px;"></span>
-                        传播关系
+                        <span class="legend-line" id="spread-legend-line" style="background: linear-gradient(to right, #4A90E2, #C3AB32); width: 20px; height: 2px; border-radius: 1px;"></span>
+                        传播关系 (源色→目标色)
                     </div>
                 </div>
             </div>
@@ -519,6 +492,7 @@
         let filteredLinks = [];
         let tooltip = null;
         let isSimulationRunning = true;
+        let currentColorTheme = 'light'; // 当前颜色主题，默认浅色
         
         // 演化树相关变量
         let evolutionData = null;
@@ -574,8 +548,10 @@
                     totalTopics: evolutionData.topics.size
                 });
                 
-                // 绘制演化树
-                drawEvolutionTree(evolutionData);
+                // 绘制演化树（延迟执行以确保传播关系数据已加载）
+                setTimeout(() => {
+                    drawEvolutionTree(evolutionData);
+                }, 100);
                 
                 // 生成话题图例
                 generateTopicLegend(evolutionData);
@@ -590,6 +566,11 @@
                 // 传递路径帖文ID进行过滤
                 processAllData(pathPostIds);
                 initializeVisualization();
+                
+                // 重新绘制演化树以反映最新的传播关系
+                setTimeout(() => {
+                    redrawEvolutionTree();
+                }, 200);
             } catch (error) {
                 console.error('数据加载失败:', error);
                 document.getElementById('network-info').innerHTML = '数据加载失败';
@@ -694,6 +675,15 @@
                                 const platformName = extractPlatformFromPlatformId(platformId);
                                 linkColor = getPlatformColorForEvolution(platformName);
                             }
+                            
+                            // 如果是平台节点的边，使用平台颜色
+                            if (type === 'platform-link') {
+                                const platformId = source; // 源节点是平台
+                                const platformName = extractPlatformFromPlatformId(platformId);
+                                linkColor = getPlatformColorForEvolution(platformName);
+                            }
+                            
+                            // 传播关系将在绘制时使用SVG渐变，这里保持默认颜色
                             
                             links.push({
                                 source: source,
@@ -877,12 +867,70 @@
                 .force('center', d3.forceCenter(width / 2, height / 2))
                 .force('collision', d3.forceCollide().radius(20));
             
+            // 创建渐变定义
+            const defs = svg.append('defs');
+            
+            // 为传播关系创建渐变
+            const spreadLinks = filteredLinks.filter(d => d.type === 'post-spread');
+            console.log('传播关系边数量:', spreadLinks.length);
+            
+            spreadLinks.forEach((link, index) => {
+                const gradientId = `gradient-${index}`;
+                const gradient = defs.append('linearGradient')
+                    .attr('id', gradientId)
+                    .attr('gradientUnits', 'userSpaceOnUse');
+                
+                // 获取源节点和目标节点的颜色
+                const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+                const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+                const sourceNode = filteredNodes.find(n => n.id === sourceId);
+                const targetNode = filteredNodes.find(n => n.id === targetId);
+                
+                console.log(`创建渐变 ${gradientId}:`, {
+                    source: sourceId,
+                    target: targetId,
+                    sourceColor: sourceNode ? sourceNode.color : 'unknown',
+                    targetColor: targetNode ? targetNode.color : 'unknown'
+                });
+                
+                if (sourceNode && targetNode) {
+                    gradient.append('stop')
+                        .attr('offset', '0%')
+                        .attr('stop-color', sourceNode.color);
+                    
+                    gradient.append('stop')
+                        .attr('offset', '100%')
+                        .attr('stop-color', targetNode.color);
+                    
+                    // 将渐变ID存储到link对象中
+                    link.gradientId = gradientId;
+                    
+                    console.log(`成功创建渐变 ${gradientId}: ${sourceNode.color} -> ${targetNode.color}`);
+                } else {
+                    console.log(`无法创建渐变 ${gradientId}: 找不到源节点或目标节点`);
+                }
+            });
+            
+
+            
             // 绘制边
             const link = g.append('g')
                 .selectAll('line')
                 .data(filteredLinks)
                 .enter().append('line')
-                .attr('stroke', d => d.color)
+                .attr('stroke', d => {
+                    // 如果是传播关系且有渐变ID，使用渐变
+                    if (d.type === 'post-spread' && d.gradientId) {
+                        const sourceId = typeof d.source === 'object' ? d.source.id : d.source;
+                        const targetId = typeof d.target === 'object' ? d.target.id : d.target;
+                        console.log(`使用渐变: ${d.gradientId} for ${sourceId} -> ${targetId}`);
+                        return `url(#${d.gradientId})`;
+                    }
+                    const sourceId = typeof d.source === 'object' ? d.source.id : d.source;
+                    const targetId = typeof d.target === 'object' ? d.target.id : d.target;
+                    console.log(`使用固定颜色: ${d.color} for ${sourceId} -> ${targetId} (type: ${d.type})`);
+                    return d.color;
+                })
                 .attr('stroke-width', d => d.width)
                 .attr('opacity', d => {
                     // 根据边类型设置不同的透明度
@@ -906,20 +954,27 @@
                 .attr('stroke', d => {
                     // 为平台节点添加特殊边框
                     if (d.type === 'platform') {
-                        if (d.id === 'P_5' || d.id === '微博') {
-                            return '#4A90E2'; // 微博蓝色边框
-                        } else if (d.id === 'P_1' || d.id === '网易新闻') {
-                            return '#C3AB32'; // 网易新闻黄色边框
-                        } else if (d.id === 'P_0' || d.id === '抖音') {
-                            return '#AC6158'; // 抖音红色边框
-                        } else if (d.id === 'P_2' || d.id === '今日头条') {
-                            return '#AD748C'; // 今日头条紫色边框
-                        } else if (d.id === 'P_4' || d.id === '小红书') {
-                            return '#3E5555'; // 小红书深绿色边框
-                        } else if (d.id === 'P_3' || d.id === '微信') {
-                            return '#E17D66'; // 微信橙色边框
+                        if (currentColorTheme === 'light') {
+                            // 浅色主题：使用平台颜色作为边框
+                            const platformName = extractPlatformFromPlatformId(d.id);
+                            return getPlatformColorForEvolution(platformName);
+                        } else {
+                            // 深色主题：使用固定颜色边框
+                            if (d.id === 'P_5' || d.id === '微博') {
+                                return '#4A90E2'; // 微博蓝色边框
+                            } else if (d.id === 'P_1' || d.id === '网易新闻') {
+                                return '#C3AB32'; // 网易新闻黄色边框
+                            } else if (d.id === 'P_0' || d.id === '抖音') {
+                                return '#AC6158'; // 抖音红色边框
+                            } else if (d.id === 'P_2' || d.id === '今日头条') {
+                                return '#AD748C'; // 今日头条紫色边框
+                            } else if (d.id === 'P_4' || d.id === '小红书') {
+                                return '#3E5555'; // 小红书深绿色边框
+                            } else if (d.id === 'P_3' || d.id === '微信') {
+                                return '#E17D66'; // 微信橙色边框
+                            }
+                            return '#333'; // 其他平台黑色边框
                         }
-                        return '#333'; // 其他平台黑色边框
                     }
                     return '#fff';
                 })
@@ -937,6 +992,8 @@
             
             console.log('绘制的节点数:', node.size());
             console.log('绘制的边数:', link.size());
+            console.log('传播关系边数:', filteredLinks.filter(d => d.type === 'post-spread').length);
+            console.log('有渐变的传播关系边数:', filteredLinks.filter(d => d.type === 'post-spread' && d.gradientId).length);
             
             // 添加节点标签
             const label = g.append('g')
@@ -1003,6 +1060,26 @@
                 weightLabel
                     .attr('x', d => (d.source.x + d.target.x) / 2)
                     .attr('y', d => (d.source.y + d.target.y) / 2);
+                
+                // 更新渐变位置
+                filteredLinks.filter(d => d.type === 'post-spread' && d.gradientId).forEach(link => {
+                    const gradient = svg.select(`#${link.gradientId}`);
+                    if (!gradient.empty()) {
+                        const sourceX = typeof link.source === 'object' ? link.source.x : 0;
+                        const sourceY = typeof link.source === 'object' ? link.source.y : 0;
+                        const targetX = typeof link.target === 'object' ? link.target.x : 0;
+                        const targetY = typeof link.target === 'object' ? link.target.y : 0;
+                        
+                        gradient
+                            .attr('x1', sourceX)
+                            .attr('y1', sourceY)
+                            .attr('x2', targetX)
+                            .attr('y2', targetY);
+                        console.log(`更新渐变 ${link.gradientId} 位置: (${sourceX},${sourceY}) -> (${targetX},${targetY})`);
+                    } else {
+                        console.log(`找不到渐变: ${link.gradientId}`);
+                    }
+                });
             });
             
             // 更新信息面板
@@ -1054,13 +1131,20 @@
                     console.log('贴文节点最终颜色:', id, '->', color);
                     return color;
                 }
-                return '#4ecdc4'; // 默认颜色
+                return currentColorTheme === 'light' ? '#B8C5D1' : '#4ecdc4'; // 根据主题设置默认颜色
             }
             
-            // 其他节点类型保持原色
-            switch (type) {
-                case 'user': return '#ff6b6b';
-                default: return '#95a5a6';
+            // 其他节点类型根据主题设置颜色
+            if (currentColorTheme === 'light') {
+                switch (type) {
+                    case 'user': return '#E6B3CC'; // 深粉紫
+                    default: return '#B8C5D1'; // 深蓝灰
+                }
+            } else {
+                switch (type) {
+                    case 'user': return '#ff6b6b';
+                    default: return '#95a5a6';
+                }
             }
         }
         
@@ -1134,13 +1218,26 @@
             return id;
         }
         
+
+        
         // 获取边颜色
         function getLinkColor(type) {
-            switch (type) {
-                case 'user-post': return '#ff6b6b';
-                case 'post-platform': return '#45b7d1'; // 贴文-平台关系使用平台颜色
-                case 'post-spread': return '#96ceb4';
-                default: return '#999';
+            if (currentColorTheme === 'light') {
+                // 浅色主题配色方案
+                switch (type) {
+                    case 'user-post': return '#E6B3CC'; // 深粉紫
+                    case 'post-platform': return '#8BB8D8'; // 深天蓝
+                    case 'post-spread': return '#7FB3B3'; // 蓝绿色
+                    default: return '#B8C5D1'; // 深蓝灰
+                }
+            } else {
+                // 深色主题配色方案
+                switch (type) {
+                    case 'user-post': return '#ff6b6b';
+                    case 'post-platform': return '#45b7d1'; // 贴文-平台关系使用平台颜色
+                    case 'post-spread': return '#96ceb4';
+                    default: return '#999';
+                }
             }
         }
         
@@ -1311,14 +1408,14 @@
             event.target.classList.add('active');
             
             // 重新应用过滤（包括视图过滤）
-            applyFilters();
+            updateVisualizationWithColor();
         }
         
         // 更新权重过滤
         function updateWeightFilter() {
             weightThreshold = parseFloat(document.getElementById('weight-slider').value);
             document.getElementById('weight-value').textContent = weightThreshold.toFixed(2);
-            applyFilters();
+            updateVisualizationWithColor();
         }
         
         // 更新节点过滤
@@ -1326,19 +1423,19 @@
             showUsers = document.getElementById('show-users').checked;
             showPosts = document.getElementById('show-posts').checked;
             showPlatforms = document.getElementById('show-platforms').checked;
-            applyFilters();
+            updateVisualizationWithColor();
         }
         
         // 更新标签显示
         function updateLabels() {
             showLabels = document.getElementById('show-labels').checked;
-            updateVisualization();
+            updateVisualizationWithColor();
         }
         
         // 更新权重显示
         function updateWeights() {
             showWeights = document.getElementById('show-weights').checked;
-            updateVisualization();
+            updateVisualizationWithColor();
         }
 
         // 更新聚合计数显示
@@ -1689,25 +1786,45 @@
         
         // 获取平台颜色
         function getPlatformColor(platformId) {
-            const platformColors = {
-                'P_5': '#4A90E2', // 微博蓝色
-                'P_1': '#C3AB32', // 网易新闻黄色
-                'P_0': '#AC6158', // 抖音红色
-                'P_2': '#AD748C', // 今日头条紫色
-                'P_4': '#3E5555', // 小红书深绿色
-                'P_3': '#E17D66', // 微信橙色
-                '微博': '#4A90E2',
-                '微信': '#E17D66',
-                '抖音': '#AC6158',
-                '今日头条': '#AD748C',
-                '小红书': '#3E5555',
-                '网易新闻': '#C3AB32'
-            };
-            console.log('getPlatformColor 输入:', platformId);
-            console.log('platformColors[platformId]:', platformColors[platformId]);
-            const result = platformColors[platformId] || '#808080';
-            console.log('getPlatformColor 输出:', result);
-            return result;
+            if (currentColorTheme === 'light') {
+                // 浅色主题配色方案
+                const lightPlatformColors = {
+                    'P_5': '#B8C5D1', // 微博 - 深蓝灰
+                    'P_1': '#A8C8A8', // 网易新闻 - 深绿灰
+                    'P_0': '#E6B3CC', // 抖音 - 深粉紫
+                    'P_2': '#7FB3B3', // 今日头条 - 蓝绿色
+                    'P_4': '#B8A9C9', // 小红书 - 深紫灰
+                    'P_3': '#8BB8D8', // 微信 - 深天蓝
+                    '微博': '#B8C5D1',
+                    '微信': '#8BB8D8',
+                    '抖音': '#E6B3CC',
+                    '今日头条': '#7FB3B3',
+                    '小红书': '#B8A9C9',
+                    '网易新闻': '#A8C8A8'
+                };
+                return lightPlatformColors[platformId] || '#B8C5D1';
+            } else {
+                // 深色主题配色方案
+                const darkPlatformColors = {
+                    'P_5': '#4A90E2', // 微博蓝色
+                    'P_1': '#C3AB32', // 网易新闻黄色
+                    'P_0': '#AC6158', // 抖音红色
+                    'P_2': '#AD748C', // 今日头条紫色
+                    'P_4': '#3E5555', // 小红书深绿色
+                    'P_3': '#E17D66', // 微信橙色
+                    '微博': '#4A90E2',
+                    '微信': '#E17D66',
+                    '抖音': '#AC6158',
+                    '今日头条': '#AD748C',
+                    '小红书': '#3E5555',
+                    '网易新闻': '#C3AB32'
+                };
+                console.log('getPlatformColor 输入:', platformId);
+                console.log('platformColors[platformId]:', darkPlatformColors[platformId]);
+                const result = darkPlatformColors[platformId] || '#808080';
+                console.log('getPlatformColor 输出:', result);
+                return result;
+            }
         }
         
         // 切换路径过滤
@@ -1722,7 +1839,7 @@
                 } else {
                     processAllData(new Set()); // 空集合表示不过滤
                 }
-                applyFilters();
+                updateVisualizationWithColor();
             }
         }
         
@@ -2065,21 +2182,41 @@
         
         // 获取平台颜色（用于演化树）
         function getPlatformColorForEvolution(platform) {
-            const colors = {
-                'DY': '#AC6158',    // 抖音
-                'XHS': '#3E5555',   // 小红书
-                'WYXW': '#C3AB32',  // 网易新闻
-                'JRTT': '#AD748C',  // 今日头条
-                'VX': '#E17D66',    // 微信
-                'WB': '#4A90E2',    // 微博
-                '抖音': '#AC6158',    // 抖音
-                '小红书': '#3E5555',   // 小红书
-                '网易新闻': '#C3AB32',  // 网易新闻
-                '今日头条': '#AD748C',  // 今日头条
-                '微信': '#E17D66',    // 微信
-                '微博': '#4A90E2'     // 微博
-            };
-            return colors[platform] || '#95a5a6';
+            if (currentColorTheme === 'light') {
+                // 浅色主题配色方案
+                const lightColors = {
+                    'DY': '#E6B3CC',    // 抖音 - 深粉紫
+                    'XHS': '#B8A9C9',   // 小红书 - 深紫灰
+                    'WYXW': '#A8C8A8',  // 网易新闻 - 深绿灰
+                    'JRTT': '#7FB3B3',  // 今日头条 - 蓝绿色
+                    'VX': '#8BB8D8',    // 微信 - 深天蓝
+                    'WB': '#B8C5D1',    // 微博 - 深蓝灰
+                    '抖音': '#E6B3CC',    // 抖音 - 深粉紫
+                    '小红书': '#B8A9C9',   // 小红书 - 深紫灰
+                    '网易新闻': '#A8C8A8',  // 网易新闻 - 深绿灰
+                    '今日头条': '#7FB3B3',  // 今日头条 - 蓝绿色
+                    '微信': '#8BB8D8',    // 微信 - 深天蓝
+                    '微博': '#B8C5D1'     // 微博 - 深蓝灰
+                };
+                return lightColors[platform] || '#B8C5D1';
+            } else {
+                // 深色主题配色方案
+                const darkColors = {
+                    'DY': '#AC6158',    // 抖音
+                    'XHS': '#3E5555',   // 小红书
+                    'WYXW': '#C3AB32',  // 网易新闻
+                    'JRTT': '#AD748C',  // 今日头条
+                    'VX': '#E17D66',    // 微信
+                    'WB': '#4A90E2',    // 微博
+                    '抖音': '#AC6158',    // 抖音
+                    '小红书': '#3E5555',   // 小红书
+                    '网易新闻': '#C3AB32',  // 网易新闻
+                    '今日头条': '#AD748C',  // 今日头条
+                    '微信': '#E17D66',    // 微信
+                    '微博': '#4A90E2'     // 微博
+                };
+                return darkColors[platform] || '#95a5a6';
+            }
         }
         
         // 生成话题图例
@@ -2150,6 +2287,21 @@
                 return;
             }
             
+            // 获取传播关系数据
+            const spreadLinks = allLinks ? allLinks.filter(link => link.type === 'post-spread') : [];
+            const spreadRelations = new Set();
+            
+            // 创建传播关系集合，用于快速查找
+            spreadLinks.forEach(link => {
+                const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+                const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+                spreadRelations.add(`${sourceId}->${targetId}`);
+            });
+            
+            console.log('演化树传播关系数量:', spreadRelations.size);
+            console.log('演化树传播关系示例:', Array.from(spreadRelations).slice(0, 5));
+            console.log('演化树帖子数量:', posts.length);
+            
             // 计算时间范围
             const timeRange = posts[posts.length - 1].time - posts[0].time;
             const timeScale = (height - 2 * margin) / timeRange;
@@ -2204,41 +2356,59 @@
                     topicPositions.set(post.topicId, { x, y });
                 }
                 
-                // 绘制连接线（如果不是第一个帖子）
+                // 只绘制有传播关系的连接线
                 if (index > 0) {
                     const prevPost = posts[index - 1];
                     const prevX = margin + (topicIds.indexOf(prevPost.topicId) * topicScale);
                     const prevY = height - margin - ((index - 1) * (height - 2 * margin) / (posts.length - 1));
                     
-                    // 如果主题相同，绘制垂直线
-                    if (post.topicId === prevPost.topicId) {
-                        const link = document.createElement('div');
-                        link.className = 'tree-link';
-                        link.style.left = x + 'px';
-                        link.style.top = prevY + 'px';
-                        link.style.width = '1px';
-                        link.style.height = (y - prevY) + 'px';
-                        treeDiv.appendChild(link);
-                    } else {
-                        // 如果主题不同，绘制斜线
-                        const link = document.createElement('div');
-                        link.className = 'tree-link';
-                        link.style.left = prevX + 'px';
-                        link.style.top = prevY + 'px';
+                    // 检查是否有传播关系
+                    const relationKey = `${prevPost.id}->${post.id}`;
+                    const hasSpreadRelation = spreadRelations.has(relationKey);
+                    
+                    console.log(`检查传播关系: ${relationKey}, 存在: ${hasSpreadRelation}`);
+                    
+                    if (hasSpreadRelation) {
+                        console.log(`绘制传播关系连线: ${prevPost.id} -> ${post.id}`);
                         
-                        const length = Math.sqrt(Math.pow(x - prevX, 2) + Math.pow(y - prevY, 2));
-                        const angle = Math.atan2(y - prevY, x - prevX) * 180 / Math.PI;
+                        // 获取源帖子和目标帖子的颜色
+                        const sourceColor = getPlatformColorForEvolution(prevPost.platform);
+                        const targetColor = getPlatformColorForEvolution(post.platform);
                         
-                        link.style.width = length + 'px';
-                        link.style.transform = `rotate(${angle}deg)`;
-                        treeDiv.appendChild(link);
+                        // 获取传播关系的颜色
+                        const spreadColor = currentColorTheme === 'light' ? '#7FB3B3' : '#96ceb4';
                         
-                        // 标记平台转换
-                        platformChanges.add(post.id);
+                        // 如果主题相同，绘制垂直线
+                        if (post.topicId === prevPost.topicId) {
+                            const link = document.createElement('div');
+                            link.className = 'tree-link';
+                            link.style.left = x + 'px';
+                            link.style.top = prevY + 'px';
+                            link.style.width = '1px'; // 传播关系线更粗
+                            link.style.height = (y - prevY) + 'px';
+                            link.style.background = `linear-gradient(to bottom, ${sourceColor}, ${targetColor})`;
+                            treeDiv.appendChild(link);
+                        } else {
+                            // 如果主题不同，绘制斜线
+                            const link = document.createElement('div');
+                            link.className = 'tree-link';
+                            link.style.left = prevX + 'px';
+                            link.style.top = prevY + 'px';
+                            
+                            const length = Math.sqrt(Math.pow(x - prevX, 2) + Math.pow(y - prevY, 2));
+                            const angle = Math.atan2(y - prevY, x - prevX) * 180 / Math.PI;
+                            
+                            link.style.width = length + 'px';
+                            link.style.transform = `rotate(${angle}deg)`;
+                            link.style.background = `linear-gradient(to right, ${sourceColor}, ${targetColor})`;
+                            link.style.height = '1px'; // 传播关系线更粗
+                            treeDiv.appendChild(link);
+                            
+                            // 标记平台转换
+                            platformChanges.add(post.id);
+                        }
                     }
                 }
-                
-
             });
         }
         
@@ -2262,6 +2432,148 @@
         // 隐藏演化树工具提示
         function hideTreeTooltip() {
             treeTooltip.style.opacity = '0';
+        }
+        
+        // 重新绘制演化树（当网络数据更新时调用）
+        function redrawEvolutionTree() {
+            if (evolutionData) {
+                drawEvolutionTree(evolutionData);
+            }
+        }
+        
+        // 切换颜色主题
+        function switchColorTheme(theme) {
+            currentColorTheme = theme;
+            
+            // 更新按钮状态
+            document.querySelectorAll('.control-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // 重新处理数据以更新节点颜色
+            if (networkData && window.pathPostIds) {
+                processAllData(window.pathPostIds);
+            }
+            
+            // 重新应用过滤和更新可视化
+            applyFilters();
+            
+            // 重新绘制演化树
+            redrawEvolutionTree();
+            
+            // 更新平台图例
+            updatePlatformLegend();
+            
+            // 更新传播关系图例
+            updateSpreadLegend();
+            
+            // 更新节点类型图例
+            updateNodeTypeLegend();
+            
+            console.log(`切换到${theme === 'light' ? '浅色' : '深色'}主题`);
+        }
+        
+        // 确保其他控制函数也能触发颜色更新
+        function updateVisualizationWithColor() {
+            // 重新处理数据以更新节点颜色
+            if (networkData && window.pathPostIds) {
+                processAllData(window.pathPostIds);
+            }
+            
+            // 重新应用过滤和更新可视化
+            applyFilters();
+            
+            // 重新绘制演化树
+            redrawEvolutionTree();
+            
+            // 更新图例
+            updatePlatformLegend();
+            updateSpreadLegend();
+            updateNodeTypeLegend();
+        }
+        
+        // 更新平台图例
+        function updatePlatformLegend() {
+            const legendContainer = document.getElementById('platform-legend');
+            if (!legendContainer) return;
+            
+            const platforms = [
+                { name: '微博', code: 'WB' },
+                { name: '网易新闻', code: 'WYXW' },
+                { name: '抖音', code: 'DY' },
+                { name: '今日头条', code: 'JRTT' },
+                { name: '小红书', code: 'XHS' },
+                { name: '微信', code: 'VX' }
+            ];
+            
+            legendContainer.innerHTML = '';
+            
+            platforms.forEach(platform => {
+                const legendItem = document.createElement('div');
+                legendItem.className = 'legend-item';
+                
+                const colorDot = document.createElement('span');
+                colorDot.className = 'legend-color';
+                colorDot.style.background = getPlatformColorForEvolution(platform.code);
+                colorDot.style.width = '15px';
+                colorDot.style.height = '15px';
+                
+                const label = document.createElement('span');
+                label.textContent = platform.name;
+                label.style.marginLeft = '8px';
+                
+                legendItem.appendChild(colorDot);
+                legendItem.appendChild(label);
+                legendContainer.appendChild(legendItem);
+            });
+        }
+        
+        // 更新传播关系图例
+        function updateSpreadLegend() {
+            const legendLine = document.getElementById('spread-legend-line');
+            if (!legendLine) return;
+            
+            if (currentColorTheme === 'light') {
+                // 浅色主题：从深粉紫到蓝绿色
+                legendLine.style.background = 'linear-gradient(to right, #E6B3CC, #7FB3B3)';
+            } else {
+                // 深色主题：从微博蓝到网易新闻黄
+                legendLine.style.background = 'linear-gradient(to right, #4A90E2, #C3AB32)';
+            }
+        }
+        
+        // 更新节点类型图例
+        function updateNodeTypeLegend() {
+            const legendContainer = document.getElementById('node-type-legend');
+            if (!legendContainer) return;
+            
+            const nodeTypes = [
+                { name: '用户节点 (小)', color: currentColorTheme === 'light' ? '#E6B3CC' : '#ff6b6b', size: '10px' },
+                { name: '帖文节点 (小)', color: currentColorTheme === 'light' ? '#B8C5D1' : '#4ecdc4', size: '8px' },
+                { name: '平台节点 (大)', color: currentColorTheme === 'light' ? '#8BB8D8' : '#45b7d1', size: '20px' }
+            ];
+            
+            legendContainer.innerHTML = '';
+            
+            nodeTypes.forEach(nodeType => {
+                const legendItem = document.createElement('div');
+                legendItem.className = 'legend-item';
+                
+                const colorDot = document.createElement('span');
+                colorDot.className = 'legend-color';
+                colorDot.style.background = nodeType.color;
+                colorDot.style.width = nodeType.size;
+                colorDot.style.height = nodeType.size;
+                
+                const label = document.createElement('span');
+                label.textContent = nodeType.name;
+                label.style.marginLeft = '8px';
+                
+                legendItem.appendChild(colorDot);
+                legendItem.appendChild(label);
+                legendContainer.appendChild(legendItem);
+            });
         }
         
         // 更新动态图例
@@ -2422,6 +2734,15 @@
             
             // 加载数据
             loadData();
+            
+            // 初始化平台图例
+            updatePlatformLegend();
+            
+            // 初始化传播关系图例
+            updateSpreadLegend();
+            
+            // 初始化节点类型图例
+            updateNodeTypeLegend();
         });
     </script>
 </body>
